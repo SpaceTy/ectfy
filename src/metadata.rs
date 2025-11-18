@@ -8,16 +8,24 @@ pub struct Metadata {
     pub nonce: [u8; 12],
     pub salt: [u8; 32],
     pub helper_question: String,
-    pub original_filename: String,
+    pub original_name: String,
+    pub content_type: ContentType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ContentType {
+    File,
+    Folder,
 }
 
 impl Metadata {
-    pub fn new(nonce: [u8; 12], salt: [u8; 32], helper_question: String, original_filename: String) -> Self {
+    pub fn new(nonce: [u8; 12], salt: [u8; 32], helper_question: String, original_name: String, content_type: ContentType) -> Self {
         Self {
             nonce,
             salt,
             helper_question,
-            original_filename,
+            original_name,
+            content_type,
         }
     }
 
@@ -43,15 +51,17 @@ mod tests {
             salt,
             "What is your favorite color?".to_string(),
             "test.txt".to_string(),
+            ContentType::File,
         );
 
         let serialized = metadata.serialize().unwrap();
         let deserialized = Metadata::deserialize(&serialized).unwrap();
 
         assert_eq!(metadata.helper_question, deserialized.helper_question);
-        assert_eq!(metadata.original_filename, deserialized.original_filename);
+        assert_eq!(metadata.original_name, deserialized.original_name);
         assert_eq!(metadata.nonce, deserialized.nonce);
         assert_eq!(metadata.salt, deserialized.salt);
+        assert_eq!(format!("{:?}", metadata.content_type), format!("{:?}", deserialized.content_type));
     }
 }
 

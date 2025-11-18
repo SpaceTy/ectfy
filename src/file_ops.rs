@@ -3,8 +3,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use crate::archive::{create_tar_archive, extract_tar_archive};
 use crate::encryption::{decrypt_data, encrypt_data, generate_salt};
-use crate::metadata::{Metadata, MAGIC_BYTES, VERSION};
+use crate::metadata::{ContentType, Metadata, MAGIC_BYTES, VERSION};
 
 pub fn is_encrypted_file(path: &Path) -> bool {
     path.extension()
@@ -84,12 +85,12 @@ pub fn encrypt_file(path: &Path, password: &str, helper_question: &str) -> Resul
     let (encrypted_data, nonce) = encrypt_data(&data, password, &salt)
         .map_err(|e| format!("Encryption failed: {}", e))?;
 
-    let original_filename = path.file_name()
+    let original_name = path.file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| "Invalid filename".to_string())?
         .to_string();
 
-    let metadata = Metadata::new(nonce, salt, helper_question.to_string(), original_filename);
+    let metadata = Metadata::new(nonce, salt, helper_question.to_string(), original_name, ContentType::File);
 
     let output_path = path.with_extension("ect");
     write_encrypted_file(&output_path, &metadata, &encrypted_data)?;
@@ -108,7 +109,7 @@ pub fn decrypt_file(path: &Path, password: &str) -> Result<PathBuf, String> {
 
     let output_path = path.parent()
         .ok_or_else(|| "Invalid file path".to_string())?
-        .join(&metadata.original_filename);
+        .join(&metadata.original_name);
 
     fs::write(&output_path, decrypted_data)
         .map_err(|e| format!("Failed to write decrypted file: {}", e))?;
@@ -164,6 +165,60 @@ pub fn decrypt_folder(path: &Path, password: &str) -> Result<Vec<PathBuf>, Strin
     }
 
     Ok(decrypted_files)
+}
+
+pub fn encrypt_folder_archive(path: &Path, password: &str, helper_question: &str) -> Result<PathBuf, String> {
+    if !path.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+
+    let folder_name = path.file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid folder name".to_string())?
+        .to_string();
+
+    let tar_data = create_tar_archive(path)
+        .map_err(|e| format!("Failed to create tar archive: {}", e))?;
+
+    let salt = generate_salt();
+    let (encrypted_data, nonce) = encrypt_data(&tar_data, password, &salt)
+        .map_err(|e| format!("Encryption failed: {}", e))?;
+
+    let metadata = Metadata::new(nonce, salt, helper_question.to_string(), folder_name.clone(), ContentType::Folder);
+
+    let output_path = path.parent()
+        .ok_or_else(|| "Invalid folder path".to_string())?
+        .join(format!("{}.ect", folder_name));
+
+    write_encrypted_file(&output_path, &metadata, &encrypted_data)?;
+
+    fs::remove_dir_all(path)
+        .map_err(|e| format!("Failed to delete original folder: {}", e))?;
+
+    Ok(output_path)
+}
+
+pub fn decrypt_folder_archive(path: &Path, password: &str) -> Result<PathBuf, String> {
+    let (metadata, encrypted_data) = read_encrypted_file(path)?;
+
+    if !matches!(metadata.content_type, ContentType::Folder) {
+        return Err("File is not a folder archive".to_string());
+    }
+
+    let decrypted_data = decrypt_data(&encrypted_data, password, &metadata.salt, &metadata.nonce)
+        .map_err(|_| "Incorrect password or corrupted file".to_string())?;
+
+    let output_path = path.parent()
+        .ok_or_else(|| "Invalid file path".to_string())?
+        .join(&metadata.original_name);
+
+    extract_tar_archive(&decrypted_data, &output_path)
+        .map_err(|e| format!("Failed to extract tar archive: {}", e))?;
+
+    fs::remove_file(path)
+        .map_err(|e| format!("Failed to delete encrypted file: {}", e))?;
+
+    Ok(output_path)
 }
 
 #[cfg(test)]

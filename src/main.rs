@@ -1,3 +1,4 @@
+mod archive;
 mod cli;
 mod encryption;
 mod file_ops;
@@ -9,7 +10,8 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use cli::Cli;
-use file_ops::{decrypt_file, decrypt_folder, encrypt_file, encrypt_folder, is_encrypted_file, read_encrypted_file};
+use file_ops::{decrypt_file, decrypt_folder_archive, encrypt_file, encrypt_folder_archive, is_encrypted_file, read_encrypted_file};
+use metadata::ContentType;
 use password::{get_password, get_password_with_confirmation};
 use selection::select_files_interactive;
 
@@ -31,14 +33,14 @@ fn process_path(path: &Path, show_password: bool) -> Result<(), String> {
         let password = get_password(show_password)
             .map_err(|e| format!("Failed to read password: {}", e))?;
 
-        if path.is_file() {
-            let decrypted = decrypt_file(path, &password)?;
-            println!("✓ Decrypted {} → {}", path.display(), decrypted.display());
-        } else if path.is_dir() {
-            let decrypted_files = decrypt_folder(path, &password)?;
-            println!("✓ Decrypted {} files", decrypted_files.len());
-            for file in decrypted_files {
-                println!("  → {}", file.display());
+        match metadata.content_type {
+            ContentType::File => {
+                let decrypted = decrypt_file(path, &password)?;
+                println!("✓ Decrypted {} → {}", path.display(), decrypted.display());
+            }
+            ContentType::Folder => {
+                let decrypted = decrypt_folder_archive(path, &password)?;
+                println!("✓ Decrypted {} → {}", path.display(), decrypted.display());
             }
         }
     } else {
@@ -56,11 +58,8 @@ fn process_path(path: &Path, show_password: bool) -> Result<(), String> {
             let encrypted = encrypt_file(path, &password, &helper_question)?;
             println!("✓ Encrypted {} → {}", path.display(), encrypted.display());
         } else if path.is_dir() {
-            let encrypted_files = encrypt_folder(path, &password, &helper_question)?;
-            println!("✓ Encrypted {} files", encrypted_files.len());
-            for file in encrypted_files {
-                println!("  → {}", file.display());
-            }
+            let encrypted = encrypt_folder_archive(path, &password, &helper_question)?;
+            println!("✓ Encrypted {} → {}", path.display(), encrypted.display());
         } else {
             return Err(format!("Path does not exist: {}", path.display()));
         }
