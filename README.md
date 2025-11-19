@@ -5,7 +5,7 @@ A simple command-line tool for encrypting and decrypting files and folders using
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/SpaceTy/ectfy
 cd ectfy
 cargo build --release
 ```
